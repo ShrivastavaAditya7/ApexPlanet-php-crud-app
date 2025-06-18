@@ -7,21 +7,46 @@ require 'db.php';
 
 $message = '';
 
+// Check if user has admin or editor role for creating posts
+if ($_SESSION['role'] !== 'admin' && $_SESSION['role'] !== 'editor') {
+    die("Access Denied: Insufficient permissions");
+}
+
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $title = trim($_POST['title'] ?? '');
     $content = trim($_POST['content'] ?? '');
 
-    if ($title === '' || $content === '') {
-        $message = "Both fields are required.";
-    } else {
+    // Enhanced server-side validation
+    $errors = [];
+    
+    if (empty($title)) {
+        $errors[] = "Title is required.";
+    } elseif (strlen($title) > 255) {
+        $errors[] = "Title must be less than 255 characters.";
+    }
+    
+    if (empty($content)) {
+        $errors[] = "Content is required.";
+    } elseif (strlen($content) > 65535) {
+        $errors[] = "Content is too long.";
+    }
+    
+    // Sanitize inputs
+    $title = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
+    $content = htmlspecialchars($content, ENT_QUOTES, 'UTF-8');
+
+    if (empty($errors)) {
         $stmt = $conn->prepare("INSERT INTO posts (title, content) VALUES (?, ?)");
         $stmt->bind_param("ss", $title, $content);
         if ($stmt->execute()) {
-            header("Location: index.php");
+            header("Location: index.php?message=Post created successfully");
             exit();
         } else {
             $message = "Error adding post.";
         }
+        $stmt->close();
+    } else {
+        $message = implode(" ", $errors);
     }
 }
 ?>
@@ -85,21 +110,56 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
       <div class="alert alert-danger"><?= htmlspecialchars($message) ?></div>
     <?php endif; ?>
 
-    <form method="POST" action="create.php">
+    <form method="POST" action="create.php" id="createForm">
       <div class="mb-3">
         <label class="form-label">Title</label>
-        <input type="text" name="title" class="form-control" required>
+        <input type="text" name="title" class="form-control" required maxlength="255" 
+               value="<?= htmlspecialchars($_POST['title'] ?? '') ?>">
+        <div class="form-text">Maximum 255 characters</div>
       </div>
 
       <div class="mb-3">
         <label class="form-label">Content</label>
-        <textarea name="content" rows="5" class="form-control" required></textarea>
+        <textarea name="content" rows="5" class="form-control" required maxlength="65535"><?= htmlspecialchars($_POST['content'] ?? '') ?></textarea>
+        <div class="form-text">Maximum 65,535 characters</div>
       </div>
 
       <button type="submit" class="btn btn-primary">Publish</button>
     </form>
   </div>
 </div>
+
+<script>
+// Client-side validation
+document.getElementById('createForm').addEventListener('submit', function(e) {
+    const title = document.querySelector('input[name="title"]').value.trim();
+    const content = document.querySelector('textarea[name="content"]').value.trim();
+    
+    if (title.length === 0) {
+        e.preventDefault();
+        alert('Title is required.');
+        return false;
+    }
+    
+    if (title.length > 255) {
+        e.preventDefault();
+        alert('Title must be less than 255 characters.');
+        return false;
+    }
+    
+    if (content.length === 0) {
+        e.preventDefault();
+        alert('Content is required.');
+        return false;
+    }
+    
+    if (content.length > 65535) {
+        e.preventDefault();
+        alert('Content is too long.');
+        return false;
+    }
+});
+</script>
 
 </body>
 </html>

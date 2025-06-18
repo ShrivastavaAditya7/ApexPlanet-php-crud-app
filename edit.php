@@ -5,19 +5,28 @@ session_start();
 require 'auth_session.php';
 require 'db.php';
 
+// Check if user has admin or editor role for editing posts
+if ($_SESSION['role'] !== 'admin' && $_SESSION['role'] !== 'editor') {
+    die("Access Denied: Insufficient permissions");
+}
+
 $message = '';
 
-if (!isset($_GET['id'])) {
+// Validate and sanitize the ID parameter
+if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     header("Location: index.php");
     exit();
 }
 
 $id = intval($_GET['id']);
+
+// Use prepared statement to fetch post
 $stmt = $conn->prepare("SELECT * FROM posts WHERE id = ?");
 $stmt->bind_param("i", $id);
 $stmt->execute();
 $result = $stmt->get_result();
 $post = $result->fetch_assoc();
+$stmt->close();
 
 if (!$post) {
     die("Post not found.");
@@ -27,17 +36,37 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $title = trim($_POST['title'] ?? '');
     $content = trim($_POST['content'] ?? '');
 
-    if ($title === '' || $content === '') {
-        $message = "Both fields are required.";
-    } else {
+    // Enhanced server-side validation
+    $errors = [];
+    
+    if (empty($title)) {
+        $errors[] = "Title is required.";
+    } elseif (strlen($title) > 255) {
+        $errors[] = "Title must be less than 255 characters.";
+    }
+    
+    if (empty($content)) {
+        $errors[] = "Content is required.";
+    } elseif (strlen($content) > 65535) {
+        $errors[] = "Content is too long.";
+    }
+    
+    // Sanitize inputs
+    $title = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
+    $content = htmlspecialchars($content, ENT_QUOTES, 'UTF-8');
+
+    if (empty($errors)) {
         $stmt = $conn->prepare("UPDATE posts SET title = ?, content = ? WHERE id = ?");
         $stmt->bind_param("ssi", $title, $content, $id);
         if ($stmt->execute()) {
-            header("Location: index.php");
+            header("Location: index.php?message=Post updated successfully");
             exit();
         } else {
             $message = "Failed to update post.";
         }
+        $stmt->close();
+    } else {
+        $message = implode(" ", $errors);
     }
 }
 ?>
@@ -101,21 +130,55 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
       <div class="alert alert-danger"><?= htmlspecialchars($message) ?></div>
     <?php endif; ?>
 
-    <form method="POST" action="">
+    <form method="POST" action="" id="editForm">
       <div class="mb-3">
         <label class="form-label">Title</label>
-        <input type="text" name="title" class="form-control" value="<?= htmlspecialchars($post['title']) ?>" required>
+        <input type="text" name="title" class="form-control" value="<?= htmlspecialchars($post['title']) ?>" required maxlength="255">
+        <div class="form-text">Maximum 255 characters</div>
       </div>
 
       <div class="mb-3">
         <label class="form-label">Content</label>
-        <textarea name="content" rows="5" class="form-control" required><?= htmlspecialchars($post['content']) ?></textarea>
+        <textarea name="content" rows="5" class="form-control" required maxlength="65535"><?= htmlspecialchars($post['content']) ?></textarea>
+        <div class="form-text">Maximum 65,535 characters</div>
       </div>
 
       <button type="submit" class="btn btn-primary">Update</button>
     </form>
   </div>
 </div>
+
+<script>
+// Client-side validation
+document.getElementById('editForm').addEventListener('submit', function(e) {
+    const title = document.querySelector('input[name="title"]').value.trim();
+    const content = document.querySelector('textarea[name="content"]').value.trim();
+    
+    if (title.length === 0) {
+        e.preventDefault();
+        alert('Title is required.');
+        return false;
+    }
+    
+    if (title.length > 255) {
+        e.preventDefault();
+        alert('Title must be less than 255 characters.');
+        return false;
+    }
+    
+    if (content.length === 0) {
+        e.preventDefault();
+        alert('Content is required.');
+        return false;
+    }
+    
+    if (content.length > 65535) {
+        e.preventDefault();
+        alert('Content is too long.');
+        return false;
+    }
+});
+</script>
 
 </body>
 </html>

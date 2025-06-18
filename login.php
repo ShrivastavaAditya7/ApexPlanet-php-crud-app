@@ -5,32 +5,44 @@ session_start();
 require 'db.php';
 
 $message = '';
+$success_message = '';
+
+// Check for success message from registration
+if (isset($_GET['message'])) {
+    $success_message = $_GET['message'];
+}
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
 
-    $stmt = $conn->prepare("SELECT * FROM users WHERE username = ?");
-    $stmt->bind_param("s", $username);
+    // Enhanced validation
+    if (empty($username) || empty($password)) {
+        $message = "Both username and password are required.";
+    } else {
+        $stmt = $conn->prepare("SELECT * FROM users WHERE username = ?");
+        $stmt->bind_param("s", $username);
 
-    if ($stmt->execute()) {
-        $result = $stmt->get_result();
-        if ($user = $result->fetch_assoc()) {
-            if (password_verify($password, $user['password'])) {
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['username'] = $user['username'];
-                header("Location: index.php");
-                exit();
+        if ($stmt->execute()) {
+            $result = $stmt->get_result();
+            if ($user = $result->fetch_assoc()) {
+                if (password_verify($password, $user['password'])) {
+                    $_SESSION['user_id'] = $user['id'];
+                    $_SESSION['username'] = $user['username'];
+                    $_SESSION['role'] = $user['role'];
+                    header("Location: index.php");
+                    exit();
+                } else {
+                    $message = "Incorrect password.";
+                }
             } else {
-                $message = "Incorrect password.";
+                $message = "User not found.";
             }
         } else {
-            $message = "User not found.";
+            $message = "Database error.";
         }
-    } else {
-        $message = "Database error.";
+        $stmt->close();
     }
-    $stmt->close();
 }
 ?>
 
@@ -93,6 +105,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
       color: #f87171;
       text-align: center;
     }
+
+    .success-message {
+      color: #34d399;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -100,14 +117,19 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <div class="login-container">
   <div class="form-title">Login to ApexPlanet</div>
   
+  <?php if ($success_message): ?>
+    <p class="success-message"><?= htmlspecialchars($success_message) ?></p>
+  <?php endif; ?>
+
   <?php if ($message): ?>
     <p class="error-message"><?= htmlspecialchars($message) ?></p>
   <?php endif; ?>
 
-  <form method="POST" action="login.php">
+  <form method="POST" action="login.php" id="loginForm">
     <div class="mb-3">
       <label for="username" class="form-label">Username</label>
-      <input type="text" class="form-control" name="username" id="username" required>
+      <input type="text" class="form-control" name="username" id="username" 
+             required value="<?= htmlspecialchars($_POST['username'] ?? '') ?>">
     </div>
 
     <div class="mb-4">
@@ -124,6 +146,26 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     </p>
   </form>
 </div>
+
+<script>
+// Client-side validation
+document.getElementById('loginForm').addEventListener('submit', function(e) {
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    
+    if (username.length === 0) {
+        e.preventDefault();
+        alert('Username is required.');
+        return false;
+    }
+    
+    if (password.length === 0) {
+        e.preventDefault();
+        alert('Password is required.');
+        return false;
+    }
+});
+</script>
 
 </body>
 </html>

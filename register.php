@@ -10,12 +10,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = trim($_POST['password'] ?? '');
     $confirm = trim($_POST['confirm_password'] ?? '');
+    $role = 'viewer'; // Default role for new registrations
 
-    if ($username === '' || $password === '' || $confirm === '') {
-        $message = "All fields are required.";
+    // Enhanced server-side validation
+    $errors = [];
+    
+    // Username validation
+    if (empty($username)) {
+        $errors[] = "Username is required.";
+    } elseif (strlen($username) < 3) {
+        $errors[] = "Username must be at least 3 characters long.";
+    } elseif (strlen($username) > 50) {
+        $errors[] = "Username must be less than 50 characters.";
+    } elseif (!preg_match('/^[a-zA-Z0-9_]+$/', $username)) {
+        $errors[] = "Username can only contain letters, numbers, and underscores.";
+    }
+    
+    // Password validation
+    if (empty($password)) {
+        $errors[] = "Password is required.";
+    } elseif (strlen($password) < 6) {
+        $errors[] = "Password must be at least 6 characters long.";
+    } elseif (strlen($password) > 255) {
+        $errors[] = "Password is too long.";
+    }
+    
+    // Confirm password validation
+    if (empty($confirm)) {
+        $errors[] = "Please confirm your password.";
     } elseif ($password !== $confirm) {
-        $message = "Passwords do not match.";
-    } else {
+        $errors[] = "Passwords do not match.";
+    }
+
+    if (empty($errors)) {
         // Check if username already exists
         $stmt = $conn->prepare("SELECT id FROM users WHERE username = ?");
         $stmt->bind_param("s", $username);
@@ -25,17 +52,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($stmt->num_rows > 0) {
             $message = "Username already taken.";
         } else {
+            // Hash password and insert user
             $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-            $stmt = $conn->prepare("INSERT INTO users (username, password) VALUES (?, ?)");
-            $stmt->bind_param("ss", $username, $hashedPassword);
+            $stmt = $conn->prepare("INSERT INTO users (username, password, role) VALUES (?, ?, ?)");
+            $stmt->bind_param("sss", $username, $hashedPassword, $role);
             if ($stmt->execute()) {
-                header("Location: login.php");
+                header("Location: login.php?message=Registration successful! Please login.");
                 exit();
             } else {
                 $message = "Error registering user.";
             }
         }
         $stmt->close();
+    } else {
+        $message = implode(" ", $errors);
     }
 }
 ?>
@@ -98,6 +128,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       color: #f87171;
       text-align: center;
     }
+
+    .password-strength {
+      margin-top: 5px;
+      font-size: 0.875em;
+    }
+
+    .strength-weak { color: #f87171; }
+    .strength-medium { color: #fbbf24; }
+    .strength-strong { color: #34d399; }
   </style>
 </head>
 <body>
@@ -108,20 +147,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <p class="error-message"><?= htmlspecialchars($message) ?></p>
     <?php endif; ?>
 
-    <form method="POST" action="register.php">
+    <form method="POST" action="register.php" id="registerForm">
       <div class="mb-3">
         <label for="username" class="form-label">Username</label>
-        <input type="text" class="form-control" name="username" id="username" required>
+        <input type="text" class="form-control" name="username" id="username" 
+               required minlength="3" maxlength="50" pattern="[a-zA-Z0-9_]+"
+               value="<?= htmlspecialchars($_POST['username'] ?? '') ?>">
+        <div class="form-text">3-50 characters, letters, numbers, and underscores only</div>
       </div>
 
       <div class="mb-3">
         <label for="password" class="form-label">Password</label>
-        <input type="password" class="form-control" name="password" id="password" required>
+        <input type="password" class="form-control" name="password" id="password" 
+               required minlength="6" maxlength="255">
+        <div class="password-strength" id="passwordStrength"></div>
+        <div class="form-text">Minimum 6 characters</div>
       </div>
 
       <div class="mb-4">
         <label for="confirm_password" class="form-label">Confirm Password</label>
-        <input type="password" class="form-control" name="confirm_password" id="confirm_password" required>
+        <input type="password" class="form-control" name="confirm_password" id="confirm_password" 
+               required minlength="6" maxlength="255">
+        <div class="form-text" id="confirmMessage"></div>
       </div>
 
       <div class="d-grid">
@@ -133,5 +180,93 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </p>
     </form>
   </div>
+
+  <script>
+  // Client-side validation
+  document.getElementById('registerForm').addEventListener('submit', function(e) {
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    const confirm = document.getElementById('confirm_password').value;
+    
+    // Username validation
+    if (username.length < 3) {
+      e.preventDefault();
+      alert('Username must be at least 3 characters long.');
+      return false;
+    }
+    
+    if (username.length > 50) {
+      e.preventDefault();
+      alert('Username must be less than 50 characters.');
+      return false;
+    }
+    
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      e.preventDefault();
+      alert('Username can only contain letters, numbers, and underscores.');
+      return false;
+    }
+    
+    // Password validation
+    if (password.length < 6) {
+      e.preventDefault();
+      alert('Password must be at least 6 characters long.');
+      return false;
+    }
+    
+    if (password !== confirm) {
+      e.preventDefault();
+      alert('Passwords do not match.');
+      return false;
+    }
+  });
+
+  // Password strength indicator
+  document.getElementById('password').addEventListener('input', function() {
+    const password = this.value;
+    const strengthDiv = document.getElementById('passwordStrength');
+    
+    let strength = 0;
+    let message = '';
+    let className = '';
+    
+    if (password.length >= 6) strength++;
+    if (password.match(/[a-z]/)) strength++;
+    if (password.match(/[A-Z]/)) strength++;
+    if (password.match(/[0-9]/)) strength++;
+    if (password.match(/[^a-zA-Z0-9]/)) strength++;
+    
+    if (strength < 2) {
+      message = 'Weak password';
+      className = 'strength-weak';
+    } else if (strength < 4) {
+      message = 'Medium strength password';
+      className = 'strength-medium';
+    } else {
+      message = 'Strong password';
+      className = 'strength-strong';
+    }
+    
+    strengthDiv.textContent = message;
+    strengthDiv.className = 'password-strength ' + className;
+  });
+
+  // Password confirmation check
+  document.getElementById('confirm_password').addEventListener('input', function() {
+    const password = document.getElementById('password').value;
+    const confirm = this.value;
+    const messageDiv = document.getElementById('confirmMessage');
+    
+    if (confirm === '') {
+      messageDiv.textContent = '';
+    } else if (password === confirm) {
+      messageDiv.textContent = 'Passwords match ✓';
+      messageDiv.style.color = '#34d399';
+    } else {
+      messageDiv.textContent = 'Passwords do not match ✗';
+      messageDiv.style.color = '#f87171';
+    }
+  });
+  </script>
 </body>
 </html>

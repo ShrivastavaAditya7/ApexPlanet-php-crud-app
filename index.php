@@ -32,6 +32,10 @@ $countStmt->execute();
 $totalResult = $countStmt->get_result()->fetch_assoc();
 $totalPosts = $totalResult['total'];
 $totalPages = ceil($totalPosts / $limit);
+
+// Get success/error messages
+$message = $_GET['message'] ?? '';
+$error = $_GET['error'] ?? '';
 ?>
 
 <!DOCTYPE html>
@@ -75,6 +79,10 @@ $totalPages = ceil($totalPosts / $limit);
       background-color: #0d6efd;
       color: white;
     }
+    .role-badge {
+      font-size: 0.8em;
+      padding: 0.25em 0.5em;
+    }
   </style>
 </head>
 <body>
@@ -82,8 +90,17 @@ $totalPages = ceil($totalPosts / $limit);
 <nav class="navbar navbar-expand-lg">
   <div class="container">
     <a class="navbar-brand fw-bold" href="#"><i class="bi bi-journal-richtext"></i> ApexPlanet</a>
-    <div>
-      <a href="create.php" class="btn btn-success me-2"><i class="bi bi-plus-circle"></i> New Post</a>
+    <div class="d-flex align-items-center">
+      <span class="text-white me-3">
+        Welcome, <?= htmlspecialchars($_SESSION['username']) ?> 
+        <span class="badge bg-light text-dark role-badge"><?= ucfirst($_SESSION['role']) ?></span>
+      </span>
+      <?php if ($_SESSION['role'] === 'admin' || $_SESSION['role'] === 'editor'): ?>
+        <a href="create.php" class="btn btn-success me-2"><i class="bi bi-plus-circle"></i> New Post</a>
+      <?php endif; ?>
+      <?php if ($_SESSION['role'] === 'admin'): ?>
+        <a href="admin_dashboard.php" class="btn btn-warning me-2"><i class="bi bi-gear"></i> Admin</a>
+      <?php endif; ?>
       <a href="logout.php" class="btn btn-outline-light"><i class="bi bi-box-arrow-right"></i> Logout</a>
     </div>
   </div>
@@ -92,6 +109,21 @@ $totalPages = ceil($totalPosts / $limit);
 <div class="container my-5">
   <h2 class="mb-4 text-primary"><i class="bi bi-pencil-square"></i> Blog Posts</h2>
 
+  <!-- Success/Error Messages -->
+  <?php if ($message): ?>
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+      <i class="bi bi-check-circle"></i> <?= htmlspecialchars($message) ?>
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+  <?php endif; ?>
+
+  <?php if ($error): ?>
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+      <i class="bi bi-exclamation-triangle"></i> <?= htmlspecialchars($error) ?>
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+  <?php endif; ?>
+
   <!-- Search -->
   <form class="input-group mb-5 shadow-sm" method="GET">
     <input type="text" class="form-control" name="search" placeholder="🔍 Search by title or content..." value="<?= htmlspecialchars($search) ?>">
@@ -99,28 +131,55 @@ $totalPages = ceil($totalPosts / $limit);
   </form>
 
   <!-- Posts -->
-  <?php while ($row = $result->fetch_assoc()): ?>
-    <div class="glass-card p-4 mb-4">
-      <h4 class="text-dark"><?= htmlspecialchars($row['title']) ?></h4>
-      <p class="text-muted"><?= nl2br(htmlspecialchars($row['content'])) ?></p>
-      <div>
-        <a href="edit.php?id=<?= $row['id'] ?>" class="btn btn-outline-warning btn-sm me-2"><i class="bi bi-pencil"></i> Edit</a>
-        <a href="delete.php?id=<?= $row['id'] ?>" class="btn btn-outline-danger btn-sm" onclick="return confirm('Are you sure you want to delete this post?')"><i class="bi bi-trash"></i> Delete</a>
+  <?php if ($result->num_rows > 0): ?>
+    <?php while ($row = $result->fetch_assoc()): ?>
+      <div class="glass-card p-4 mb-4">
+        <h4 class="text-dark"><?= htmlspecialchars($row['title']) ?></h4>
+        <p class="text-muted"><?= nl2br(htmlspecialchars($row['content'])) ?></p>
+        <div class="d-flex justify-content-between align-items-center">
+          <small class="text-muted">
+            <i class="bi bi-calendar"></i> <?= date('F j, Y', strtotime($row['created_at'])) ?>
+          </small>
+          <?php if ($_SESSION['role'] === 'admin' || $_SESSION['role'] === 'editor'): ?>
+            <div>
+              <a href="edit.php?id=<?= $row['id'] ?>" class="btn btn-outline-warning btn-sm me-2">
+                <i class="bi bi-pencil"></i> Edit
+              </a>
+              <a href="delete.php?id=<?= $row['id'] ?>" class="btn btn-outline-danger btn-sm" 
+                 onclick="return confirm('Are you sure you want to delete this post?')">
+                <i class="bi bi-trash"></i> Delete
+              </a>
+            </div>
+          <?php endif; ?>
+        </div>
       </div>
+    <?php endwhile; ?>
+  <?php else: ?>
+    <div class="text-center py-5">
+      <i class="bi bi-journal-x display-1 text-muted"></i>
+      <h4 class="text-muted mt-3">No posts found</h4>
+      <?php if ($search): ?>
+        <p class="text-muted">No posts match your search criteria.</p>
+      <?php else: ?>
+        <p class="text-muted">No posts have been created yet.</p>
+      <?php endif; ?>
     </div>
-  <?php endwhile; ?>
+  <?php endif; ?>
 
   <!-- Pagination -->
-  <nav>
-    <ul class="pagination justify-content-center mt-5">
-      <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-        <li class="page-item <?= $i == $page ? 'active' : '' ?>">
-          <a class="page-link" href="?page=<?= $i ?>&search=<?= urlencode($search) ?>"><?= $i ?></a>
-        </li>
-      <?php endfor; ?>
-    </ul>
-  </nav>
+  <?php if ($totalPages > 1): ?>
+    <nav>
+      <ul class="pagination justify-content-center mt-5">
+        <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+          <li class="page-item <?= $i == $page ? 'active' : '' ?>">
+            <a class="page-link" href="?page=<?= $i ?>&search=<?= urlencode($search) ?>"><?= $i ?></a>
+          </li>
+        <?php endfor; ?>
+      </ul>
+    </nav>
+  <?php endif; ?>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
